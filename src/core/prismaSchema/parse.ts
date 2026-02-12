@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { getDMMF } from '@prisma/internals';
+import pkg from '@prisma/internals';
+const { getDMMF } = pkg;
 import type { AuditField, AuditModel, AuditUniqueIndex, ParseResult } from './types.js';
 
 /**
