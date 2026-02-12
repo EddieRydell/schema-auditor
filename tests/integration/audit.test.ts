@@ -1,0 +1,54 @@
+import { describe, it, expect } from 'vitest';
+import { resolve } from 'node:path';
+import { audit } from '../../src/index.js';
+import { toJson } from '../../src/core/report/toJson.js';
+
+const FIXTURES_DIR = resolve(import.meta.dirname, '../fixtures/schemas');
+
+describe('audit (integration)', () => {
+  it('produces deterministic JSON output for basic schema', async () => {
+    const result = await audit(resolve(FIXTURES_DIR, 'basic.prisma'), true);
+    const json1 = toJson(result, false);
+    const result2 = await audit(resolve(FIXTURES_DIR, 'basic.prisma'), true);
+    const json2 = toJson(result2, false);
+    expect(json1).toBe(json2);
+  });
+
+  it('full audit result matches snapshot for basic schema', async () => {
+    const result = await audit(resolve(FIXTURES_DIR, 'basic.prisma'), true);
+
+    expect(result.metadata.modelCount).toBe(2);
+    expect(result.metadata.timestamp).toBeNull();
+    expect(result.contract.models).toHaveLength(2);
+
+    // Verify contract structure
+    const post = result.contract.models.find((m) => m.name === 'Post')!;
+    expect(post.primaryKey).toEqual({ fields: ['id'], isComposite: false });
+    expect(post.foreignKeys).toHaveLength(1);
+    expect(post.foreignKeys[0]!.referencedModel).toBe('User');
+
+    const user = result.contract.models.find((m) => m.name === 'User')!;
+    expect(user.primaryKey).toEqual({ fields: ['id'], isComposite: false });
+    expect(user.uniqueConstraints).toHaveLength(1);
+    expect(user.uniqueConstraints[0]!.fields).toEqual(['email']);
+
+    // No findings for a clean schema
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it('handles empty schema', async () => {
+    const result = await audit(resolve(FIXTURES_DIR, 'empty.prisma'), true);
+    expect(result.metadata.modelCount).toBe(0);
+    expect(result.contract.models).toHaveLength(0);
+    expect(result.findings).toHaveLength(0);
+  });
+
+  it('handles composite key schema', async () => {
+    const result = await audit(resolve(FIXTURES_DIR, 'composite.prisma'), true);
+    expect(result.metadata.modelCount).toBe(3);
+
+    const postTag = result.contract.models.find((m) => m.name === 'PostTag')!;
+    expect(postTag.primaryKey!.isComposite).toBe(true);
+    expect(postTag.foreignKeys).toHaveLength(2);
+  });
+});
