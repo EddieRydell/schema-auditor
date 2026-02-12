@@ -32,8 +32,9 @@ describe('audit (integration)', () => {
     expect(user.uniqueConstraints).toHaveLength(1);
     expect(user.uniqueConstraints[0]!.fields).toEqual(['email']);
 
-    // No findings for a clean schema
-    expect(result.findings).toHaveLength(0);
+    // Post.authorId FK is not covered by PK/unique → FK_MISSING_INDEX
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]!.rule).toBe('FK_MISSING_INDEX');
   });
 
   it('handles empty schema', async () => {

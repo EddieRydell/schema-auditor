@@ -1,0 +1,11 @@
+{
+  "suppress": ["NF3_VIOLATION:Employee"],
+  "Employee": {
+    "functionalDependencies": [
+      {
+        "determinant": ["departmentId"],
+        "dependent": ["deptName", "deptLocation"]
+      }
+    ]
+  }
+}

@@ -7,6 +7,7 @@ const functionalDependencySchema = z.object({
   determinant: z.array(z.string()).min(1),
   dependent: z.array(z.string()).min(1),
   note: z.string().optional(),
+  rule: z.string().optional(),
 });
 
 /**
@@ -21,6 +22,14 @@ const modelInvariantsSchema = z.object({
  * Top-level keys are model names, values are model invariants.
  */
 export const invariantsFileSchema = z.record(z.string(), modelInvariantsSchema);
+
+/**
+ * Zod schema for the suppress array.
+ * Format: RULE_CODE:ModelName or RULE_CODE:ModelName.fieldName
+ */
+export const suppressArraySchema = z.array(
+  z.string().regex(/^[A-Z][A-Z0-9_]*:[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?$/),
+);
 
 /** Parsed type for a functional dependency. */
 export type InvariantFd = z.infer<typeof functionalDependencySchema>;

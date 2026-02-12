@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { audit, generateInvariants } from './index.js';
 import { toJson } from './core/report/toJson.js';
 import { toText } from './core/report/toText.js';
-import type { OutputFormat } from './core/report/reportTypes.js';
+import type { OutputFormat, FormatOptions } from './core/report/reportTypes.js';
 
 /** Exit codes. */
 const EXIT_OK = 0;
@@ -27,6 +27,7 @@ Options:
   --fail-on <severity>  Exit 1 if findings at this severity or above: error | warning | info
   --no-timestamp        Omit timestamp from output
   --pretty              Pretty-print JSON output
+  --findings-only       Omit contract from output (show only findings + metadata)
   --generate-invariants Generate invariants JSON from schema constraints
   --help                Show this help message
 `,
@@ -47,6 +48,7 @@ export async function main(argv?: string[]): Promise<number> {
         'fail-on': { type: 'string' },
         'no-timestamp': { type: 'boolean', default: false },
         pretty: { type: 'boolean', default: false },
+        'findings-only': { type: 'boolean', default: false },
         'generate-invariants': { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -101,6 +103,8 @@ export async function main(argv?: string[]): Promise<number> {
 
   const noTimestamp = args.values['no-timestamp'] === true;
   const pretty = args.values['pretty'] === true;
+  const findingsOnly = args.values['findings-only'] === true;
+  const formatOptions: FormatOptions = { findingsOnly };
 
   // Resolve invariants path if provided
   const invariantsArg = args.values['invariants'] as string | undefined;
@@ -157,7 +161,7 @@ export async function main(argv?: string[]): Promise<number> {
 
   // Format output
   const output =
-    outputFormat === 'json' ? toJson(result, pretty) : toText(result);
+    outputFormat === 'json' ? toJson(result, pretty, formatOptions) : toText(result, formatOptions);
 
   // Write output
   const outPath = args.values['out'] as string | undefined;

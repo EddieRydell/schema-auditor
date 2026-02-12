@@ -1,17 +1,37 @@
 import { readFileSync } from 'node:fs';
-import { invariantsFileSchema } from './schema.js';
+import { invariantsFileSchema, suppressArraySchema } from './schema.js';
 import type { InvariantsFile } from './schema.js';
 import type { FunctionalDependency } from '../analysis/inferFds.js';
 import type { ConstraintContract, Finding } from '../report/reportTypes.js';
 
+/** Result of parsing an invariants file. */
+export interface ParsedInvariants {
+  readonly invariants: InvariantsFile;
+  readonly suppress: readonly string[];
+}
+
 /**
  * Parse and validate an invariants JSON file.
- * Returns the validated invariants or throws on invalid input.
+ * Returns the validated invariants and suppress list, or throws on invalid input.
  */
-export function parseInvariantsFile(filePath: string): InvariantsFile {
+export function parseInvariantsFile(filePath: string): ParsedInvariants {
   const content = readFileSync(filePath, 'utf-8');
   const raw: unknown = JSON.parse(content);
-  return invariantsFileSchema.parse(raw);
+
+  // Extract suppress array before validating the rest as model record
+  let suppress: readonly string[] = [];
+  let modelData: unknown = raw;
+  if (raw !== null && typeof raw === 'object' && !Array.isArray(raw)) {
+    const obj = raw as Record<string, unknown>;
+    if ('suppress' in obj) {
+      suppress = suppressArraySchema.parse(obj['suppress']);
+      const { suppress: _suppress, ...rest } = obj;
+      modelData = rest;
+    }
+  }
+
+  const invariants = invariantsFileSchema.parse(modelData);
+  return { invariants, suppress };
 }
 
 /**
@@ -65,10 +85,20 @@ export function validateInvariantsAgainstContract(
 
     const fieldNames = new Set(model.fields.map((f) => f.name));
     if (modelInvariants.functionalDependencies !== undefined) {
+      // Collect constraint field arrays for enforcement check
+      const constraintFieldSets: readonly string[][] = [
+        ...(model.primaryKey !== null ? [model.primaryKey.fields as string[]] : []),
+        ...model.uniqueConstraints.map((uq) => uq.fields as string[]),
+      ];
+
       for (const fd of modelInvariants.functionalDependencies) {
         const allReferencedFields = new Set([...fd.determinant, ...fd.dependent]);
+        let hasUnknownDeterminantField = false;
         for (const field of allReferencedFields) {
           if (!fieldNames.has(field)) {
+            if (fd.determinant.includes(field)) {
+              hasUnknownDeterminantField = true;
+            }
             findings.push({
               rule: 'INVARIANT_UNKNOWN_FIELD',
               severity: 'warning',
@@ -77,6 +107,27 @@ export function validateInvariantsAgainstContract(
               field,
               message: `Invariants reference field "${field}" which does not exist in model "${modelName}".`,
               fix: `Update the invariants file to remove or rename field '${field}' in model '${modelName}'.`,
+            });
+          }
+        }
+
+        // Check if determinant is enforced by any PK or unique constraint.
+        // Skip if any determinant field doesn't exist (already reported above).
+        if (!hasUnknownDeterminantField) {
+          const detSet = new Set(fd.determinant);
+          const isEnforced = constraintFieldSets.some((constraintFields) =>
+            constraintFields.every((cf) => detSet.has(cf)),
+          );
+          if (!isEnforced) {
+            const det = fd.determinant.join(', ');
+            findings.push({
+              rule: 'INVARIANT_DETERMINANT_NOT_ENFORCED',
+              severity: 'warning',
+              normalForm: 'SCHEMA',
+              model: modelName,
+              field: null,
+              message: `Invariant FD {${det}} → {${fd.dependent.join(', ')}} on "${modelName}": determinant is not enforced by any PK or unique constraint.`,
+              fix: `Add @@unique([${det}]) to enforce this functional dependency.`,
             });
           }
         }

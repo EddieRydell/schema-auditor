@@ -5,6 +5,7 @@ import {
   invariantsToFds,
   validateInvariantsAgainstContract,
 } from '../../src/core/invariants/parse.js';
+import { suppressArraySchema } from '../../src/core/invariants/schema.js';
 import type { ConstraintContract } from '../../src/core/report/reportTypes.js';
 import type { InvariantsFile } from '../../src/core/invariants/schema.js';
 
@@ -12,7 +13,7 @@ const FIXTURES_DIR = resolve(import.meta.dirname, '../fixtures/invariants');
 
 describe('parseInvariantsFile', () => {
   it('parses a valid invariants file', () => {
-    const invariants = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
 
     expect(invariants).toHaveProperty('Employee');
     expect(invariants.Employee?.functionalDependencies).toHaveLength(1);
@@ -26,7 +27,7 @@ describe('parseInvariantsFile', () => {
   });
 
   it('parses a valid invariants file with notes', () => {
-    const invariants = parseInvariantsFile(resolve(FIXTURES_DIR, 'with-notes.json'));
+    const { invariants } = parseInvariantsFile(resolve(FIXTURES_DIR, 'with-notes.json'));
 
     expect(invariants).toHaveProperty('Employee');
     const fd = invariants.Employee?.functionalDependencies?.[0];
@@ -34,7 +35,7 @@ describe('parseInvariantsFile', () => {
   });
 
   it('parses without note (backward compat)', () => {
-    const invariants = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
 
     const fd = invariants.Employee?.functionalDependencies?.[0];
     expect(fd?.note).toBeUndefined();
@@ -53,7 +54,7 @@ describe('parseInvariantsFile', () => {
   });
 
   it('converts invariants to FDs', () => {
-    const invariants = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
     const fds = invariantsToFds(invariants);
 
     expect(fds).toHaveLength(1);
@@ -64,11 +65,34 @@ describe('parseInvariantsFile', () => {
   });
 
   it('handles multiple models and FDs', () => {
-    const invariants = parseInvariantsFile(resolve(FIXTURES_DIR, 'basic-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(FIXTURES_DIR, 'basic-invariants.json'));
     const fds = invariantsToFds(invariants);
 
     expect(fds).toHaveLength(1);
     expect(fds[0]?.model).toBe('User');
+  });
+
+  it('returns empty suppress array for files without suppress key', () => {
+    const { suppress } = parseInvariantsFile(resolve(FIXTURES_DIR, '3nf-invariants.json'));
+    expect(suppress).toEqual([]);
+  });
+
+  it('parses suppress array from invariants file', () => {
+    const { invariants, suppress } = parseInvariantsFile(resolve(FIXTURES_DIR, 'with-suppress.json'));
+    expect(suppress).toEqual(['NF3_VIOLATION:Employee']);
+    expect(invariants).toHaveProperty('Employee');
+  });
+
+  it('throws on invalid suppress entry format', () => {
+    expect(() => {
+      suppressArraySchema.parse(['invalid-format']);
+    }).toThrow();
+  });
+
+  it('validates correct suppress entry formats', () => {
+    expect(() => {
+      suppressArraySchema.parse(['NF3_VIOLATION:Employee', 'FK_MISSING_INDEX:Post.authorId']);
+    }).not.toThrow();
   });
 });
 
@@ -166,5 +190,76 @@ describe('validateInvariantsAgainstContract', () => {
     // 'ghost' appears in both determinant and dependent but should only produce one finding
     expect(findings).toHaveLength(1);
     expect(findings[0]!.field).toBe('ghost');
+  });
+
+  it('does not flag determinant matching unique constraint', () => {
+    const invariants: InvariantsFile = {
+      User: {
+        functionalDependencies: [
+          { determinant: ['email'], dependent: ['name'] },
+        ],
+      },
+    };
+    const findings = validateInvariantsAgainstContract(invariants, userContract);
+    const enforced = findings.filter((f) => f.rule === 'INVARIANT_DETERMINANT_NOT_ENFORCED');
+    expect(enforced).toHaveLength(0);
+  });
+
+  it('does not flag determinant matching PK', () => {
+    const invariants: InvariantsFile = {
+      User: {
+        functionalDependencies: [
+          { determinant: ['id'], dependent: ['name'] },
+        ],
+      },
+    };
+    const findings = validateInvariantsAgainstContract(invariants, userContract);
+    const enforced = findings.filter((f) => f.rule === 'INVARIANT_DETERMINANT_NOT_ENFORCED');
+    expect(enforced).toHaveLength(0);
+  });
+
+  it('flags determinant NOT matching any constraint', () => {
+    const invariants: InvariantsFile = {
+      User: {
+        functionalDependencies: [
+          { determinant: ['name'], dependent: ['email'] },
+        ],
+      },
+    };
+    const findings = validateInvariantsAgainstContract(invariants, userContract);
+    const enforced = findings.filter((f) => f.rule === 'INVARIANT_DETERMINANT_NOT_ENFORCED');
+    expect(enforced).toHaveLength(1);
+    expect(enforced[0]!.model).toBe('User');
+    expect(enforced[0]!.severity).toBe('warning');
+    expect(enforced[0]!.normalForm).toBe('SCHEMA');
+    expect(enforced[0]!.fix).toContain('@@unique');
+  });
+
+  it('does not flag determinant that is superset of unique (subset enforces it)', () => {
+    const invariants: InvariantsFile = {
+      User: {
+        functionalDependencies: [
+          { determinant: ['email', 'name'], dependent: ['id'] },
+        ],
+      },
+    };
+    const findings = validateInvariantsAgainstContract(invariants, userContract);
+    const enforced = findings.filter((f) => f.rule === 'INVARIANT_DETERMINANT_NOT_ENFORCED');
+    expect(enforced).toHaveLength(0);
+  });
+
+  it('skips enforcement check when determinant has unknown fields', () => {
+    const invariants: InvariantsFile = {
+      User: {
+        functionalDependencies: [
+          { determinant: ['nonExistent'], dependent: ['email'] },
+        ],
+      },
+    };
+    const findings = validateInvariantsAgainstContract(invariants, userContract);
+    const enforced = findings.filter((f) => f.rule === 'INVARIANT_DETERMINANT_NOT_ENFORCED');
+    expect(enforced).toHaveLength(0);
+    // But should still have INVARIANT_UNKNOWN_FIELD
+    expect(findings.some((f) => f.rule === 'INVARIANT_UNKNOWN_FIELD')).toBe(true);
   });
 });

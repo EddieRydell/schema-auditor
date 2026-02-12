@@ -1,9 +1,9 @@
-import type { AuditResult } from './reportTypes.js';
+import type { AuditResult, FormatOptions } from './reportTypes.js';
 
 /**
  * Format an AuditResult as human-readable text.
  */
-export function toText(result: AuditResult): string {
+export function toText(result: AuditResult, options?: FormatOptions): string {
   const lines: string[] = [];
 
   lines.push('=== Prisma Schema Audit ===');
@@ -17,24 +17,26 @@ export function toText(result: AuditResult): string {
   lines.push(`Findings:  ${String(result.metadata.findingCount)}`);
   lines.push('');
 
-  // Contract summary
-  lines.push('--- Constraint Contract ---');
-  for (const model of result.contract.models) {
-    lines.push(`  Model: ${model.name}`);
-    if (model.primaryKey !== null) {
-      lines.push(`    PK: (${model.primaryKey.fields.join(', ')})`);
+  // Contract summary (omitted in findings-only mode)
+  if (options?.findingsOnly !== true) {
+    lines.push('--- Constraint Contract ---');
+    for (const model of result.contract.models) {
+      lines.push(`  Model: ${model.name}`);
+      if (model.primaryKey !== null) {
+        lines.push(`    PK: (${model.primaryKey.fields.join(', ')})`);
+      }
+      for (const uq of model.uniqueConstraints) {
+        const label = uq.name !== null ? ` [${uq.name}]` : '';
+        lines.push(`    Unique${label}: (${uq.fields.join(', ')})`);
+      }
+      for (const fk of model.foreignKeys) {
+        lines.push(
+          `    FK: (${fk.fields.join(', ')}) -> ${fk.referencedModel}(${fk.referencedFields.join(', ')}) onDelete=${fk.onDelete} onUpdate=${fk.onUpdate}`,
+        );
+      }
     }
-    for (const uq of model.uniqueConstraints) {
-      const label = uq.name !== null ? ` [${uq.name}]` : '';
-      lines.push(`    Unique${label}: (${uq.fields.join(', ')})`);
-    }
-    for (const fk of model.foreignKeys) {
-      lines.push(
-        `    FK: (${fk.fields.join(', ')}) -> ${fk.referencedModel}(${fk.referencedFields.join(', ')}) onDelete=${fk.onDelete} onUpdate=${fk.onUpdate}`,
-      );
-    }
+    lines.push('');
   }
-  lines.push('');
 
   // Findings
   if (result.findings.length > 0) {

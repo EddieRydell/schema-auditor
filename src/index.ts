@@ -12,6 +12,7 @@ export type {
   Severity,
   NormalForm,
   OutputFormat,
+  FormatOptions,
   ReferentialAction,
 } from './core/report/reportTypes.js';
 
@@ -26,6 +27,7 @@ export type {
 export type { FunctionalDependency } from './core/analysis/inferFds.js';
 export type { CandidateKey } from './core/analysis/computeKeys.js';
 export type { InvariantsFile, InvariantFd } from './core/invariants/schema.js';
+export type { ParsedInvariants } from './core/invariants/parse.js';
 
 import { parseSchema } from './core/prismaSchema/parse.js';
 import { extractContract } from './core/prismaSchema/contract.js';
@@ -34,6 +36,7 @@ import { check1nf } from './core/analysis/normalizeChecks/check1nf.js';
 import { check2nf } from './core/analysis/normalizeChecks/check2nf.js';
 import { check3nf } from './core/analysis/normalizeChecks/check3nf.js';
 import { checkSoftDelete } from './core/analysis/normalizeChecks/checkSoftDelete.js';
+import { checkFkIndexes } from './core/analysis/normalizeChecks/checkFkIndexes.js';
 import { parseInvariantsFile, invariantsToFds, validateInvariantsAgainstContract } from './core/invariants/parse.js';
 import { generateInvariantsFile } from './core/invariants/generate.js';
 import type { AuditResult, Finding } from './core/report/reportTypes.js';
@@ -68,20 +71,27 @@ export async function audit(
   // Merge invariant-declared FDs if provided
   let allFds = schemaFds;
   let invariantFindings: readonly Finding[] = [];
+  let suppress: readonly string[] = [];
   if (options.invariantsPath !== undefined) {
-    const invariants = parseInvariantsFile(options.invariantsPath);
-    const invariantFds = invariantsToFds(invariants);
+    const parsedInvariants = parseInvariantsFile(options.invariantsPath);
+    const invariantFds = invariantsToFds(parsedInvariants.invariants);
     allFds = [...schemaFds, ...invariantFds];
-    invariantFindings = validateInvariantsAgainstContract(invariants, contract);
+    invariantFindings = validateInvariantsAgainstContract(parsedInvariants.invariants, contract);
+    suppress = parsedInvariants.suppress;
   }
 
-  const findings = [
+  const allFindings = [
     ...check1nf(contract),
     ...check2nf(contract, allFds),
     ...check3nf(contract, allFds),
     ...checkSoftDelete(contract),
+    ...checkFkIndexes(contract),
     ...invariantFindings,
   ];
+
+  const findings = suppress.length > 0
+    ? allFindings.filter((f) => !isSuppressed(f, suppress))
+    : allFindings;
 
   return {
     contract,
@@ -110,4 +120,36 @@ export async function generateInvariants(options: GenerateInvariantsOptions): Pr
   const contract = extractContract(parsed);
   const fds = inferFunctionalDependencies(contract);
   return generateInvariantsFile(contract, fds);
+}
+
+/**
+ * Check if a finding is suppressed by a suppress entry.
+ * Supports RULE:Model and RULE:Model.field patterns.
+ */
+function isSuppressed(finding: Finding, suppress: readonly string[]): boolean {
+  for (const entry of suppress) {
+    const colonIdx = entry.indexOf(':');
+    const rule = entry.slice(0, colonIdx);
+    const target = entry.slice(colonIdx + 1);
+
+    if (rule !== finding.rule) {
+      continue;
+    }
+
+    const dotIdx = target.indexOf('.');
+    if (dotIdx === -1) {
+      // RULE:Model — suppress all findings for this model
+      if (target === finding.model) {
+        return true;
+      }
+    } else {
+      // RULE:Model.field — suppress only the specific field
+      const model = target.slice(0, dotIdx);
+      const field = target.slice(dotIdx + 1);
+      if (model === finding.model && field === finding.field) {
+        return true;
+      }
+    }
+  }
+  return false;
 }

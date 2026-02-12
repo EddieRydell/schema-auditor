@@ -26,7 +26,7 @@ export function generateInvariantsFile(
   }
 
   const modelNames = [...byModel.keys()].sort();
-  const result: Record<string, { functionalDependencies: { determinant: string[]; dependent: string[]; note: string }[] }> = {};
+  const result: Record<string, { functionalDependencies: { determinant: string[]; dependent: string[]; note: string; rule: string }[] }> = {};
 
   for (const modelName of modelNames) {
     const modelFds = byModel.get(modelName);
@@ -37,6 +37,7 @@ export function generateInvariantsFile(
       determinant: [...fd.determinant].sort(),
       dependent: [...fd.dependent].sort(),
       note: generateNote(fd),
+      rule: generateRule(fd, modelName),
     }));
 
     if (entries.length > 0) {
@@ -45,6 +46,14 @@ export function generateInvariantsFile(
   }
 
   return result;
+}
+
+function generateRule(fd: FunctionalDependency, modelName: string): string {
+  const det =
+    fd.determinant.length === 1
+      ? (fd.determinant[0] ?? '')
+      : fd.determinant.join(' + ');
+  return `Each ${modelName} is uniquely identified by ${det}`;
 }
 
 function generateNote(fd: FunctionalDependency): string {

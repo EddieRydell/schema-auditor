@@ -15,7 +15,11 @@ export type RuleCode =
   | 'BCNF_VIOLATION'
   | 'INVARIANT_UNKNOWN_MODEL'
   | 'INVARIANT_UNKNOWN_FIELD'
-  | 'SOFTDELETE_MISSING_IN_UNIQUE';
+  | 'INVARIANT_DETERMINANT_NOT_ENFORCED'
+  | 'SOFTDELETE_MISSING_IN_UNIQUE'
+  | 'SOFTDELETE_AT_WITHOUT_BY'
+  | 'SOFTDELETE_BY_WITHOUT_AT'
+  | 'FK_MISSING_INDEX';
 
 /** A single normalization finding. */
 export interface Finding {
@@ -83,6 +87,11 @@ export interface ConstraintContract {
 
 /** Output format options. */
 export type OutputFormat = 'json' | 'text';
+
+/** Options controlling formatter output. */
+export interface FormatOptions {
+  readonly findingsOnly?: boolean | undefined;
+}
 
 /** The complete audit result. */
 export interface AuditResult {

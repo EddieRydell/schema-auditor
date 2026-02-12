@@ -27,11 +27,13 @@ describe('generateInvariantsFile', () => {
     const pkFd = userFds.find((fd) => fd.note === 'Primary key determines all fields');
     expect(pkFd).toBeDefined();
     expect(pkFd!.determinant).toEqual(['id']);
+    expect(pkFd!.rule).toBe('Each User is uniquely identified by id');
 
     // Unique FD
     const uniqueFd = userFds.find((fd) => fd.note?.includes('Unique constraint') === true);
     expect(uniqueFd).toBeDefined();
     expect(uniqueFd!.determinant).toEqual(['email']);
+    expect(uniqueFd!.rule).toBe('Each User is uniquely identified by email');
   });
 
   it('excludes FK FDs (no dotted dependents)', async () => {
@@ -79,6 +81,33 @@ describe('generateInvariantsFile', () => {
         (fd) => fd.note?.includes('primary key') === true || fd.note?.includes('Primary key') === true,
       );
       expect(pkFds ?? []).toHaveLength(0);
+    }
+  });
+
+  it('generates composite rule text for multi-field determinants', async () => {
+    const parsed = await parseSchema(resolve(FIXTURES_DIR, 'composite.prisma'));
+    const contract = extractContract(parsed);
+    const fds = inferFunctionalDependencies(contract);
+    const result = generateInvariantsFile(contract, fds);
+
+    // Tag has unique on name → should have composite-free rule
+    const tagFds = result.Tag!.functionalDependencies!;
+    const uniqueFd = tagFds.find((fd) => fd.determinant.includes('name'));
+    expect(uniqueFd?.rule).toBe('Each Tag is uniquely identified by name');
+  });
+
+  it('all generated FDs include a rule field', async () => {
+    const parsed = await parseSchema(resolve(FIXTURES_DIR, 'basic.prisma'));
+    const contract = extractContract(parsed);
+    const fds = inferFunctionalDependencies(contract);
+    const result = generateInvariantsFile(contract, fds);
+
+    for (const [_model, modelInvariants] of Object.entries(result)) {
+      for (const fd of modelInvariants.functionalDependencies ?? []) {
+        expect(fd.rule).toBeDefined();
+        expect(typeof fd.rule).toBe('string');
+        expect(fd.rule!.length).toBeGreaterThan(0);
+      }
     }
   });
 

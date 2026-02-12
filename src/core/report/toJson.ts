@@ -1,11 +1,14 @@
-import type { AuditResult } from './reportTypes.js';
+import type { AuditResult, FormatOptions } from './reportTypes.js';
 
 /**
  * Serialize an AuditResult to a deterministic JSON string.
  * Keys are sorted for stable diffing.
  */
-export function toJson(result: AuditResult, pretty: boolean): string {
-  const sorted = sortKeysDeep(result);
+export function toJson(result: AuditResult, pretty: boolean, options?: FormatOptions): string {
+  const data = options?.findingsOnly === true
+    ? { findings: result.findings, metadata: result.metadata }
+    : result;
+  const sorted = sortKeysDeep(data);
   return pretty
     ? JSON.stringify(sorted, null, 2)
     : JSON.stringify(sorted);

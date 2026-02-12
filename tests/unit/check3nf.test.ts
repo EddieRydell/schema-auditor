@@ -15,7 +15,7 @@ describe('check3nf', () => {
     const contract = extractContract(parsed);
     const schemaFds = inferFunctionalDependencies(contract);
 
-    const invariants = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
     const invariantFds = invariantsToFds(invariants);
     const allFds = [...schemaFds, ...invariantFds];
 
@@ -56,7 +56,7 @@ describe('check3nf', () => {
     const schemaFds = inferFunctionalDependencies(contract);
 
     // email → name is already covered by email being a unique key
-    const invariants = parseInvariantsFile(resolve(INVARIANTS_DIR, 'basic-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(INVARIANTS_DIR, 'basic-invariants.json'));
     const invariantFds = invariantsToFds(invariants);
     const allFds = [...schemaFds, ...invariantFds];
 
@@ -71,7 +71,7 @@ describe('check3nf', () => {
     const contract = extractContract(parsed);
     const schemaFds = inferFunctionalDependencies(contract);
 
-    const invariants = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
     const invariantFds = invariantsToFds(invariants);
     const allFds = [...schemaFds, ...invariantFds];
 
@@ -89,7 +89,7 @@ describe('check3nf', () => {
     const contract = extractContract(parsed);
     const schemaFds = inferFunctionalDependencies(contract);
 
-    const invariants = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
+    const { invariants } = parseInvariantsFile(resolve(INVARIANTS_DIR, '3nf-invariants.json'));
     const invariantFds = invariantsToFds(invariants);
     const allFds = [...schemaFds, ...invariantFds];
 

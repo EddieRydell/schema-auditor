@@ -88,7 +88,7 @@ describe('CLI', () => {
   });
 
   describe('schema processing', () => {
-    it('outputs valid JSON by default for a clean schema', async () => {
+    it('outputs valid JSON by default for basic schema', async () => {
       const code = await main(['--schema', BASIC_SCHEMA, '--no-timestamp']);
       expect(code).toBe(0);
 
@@ -97,7 +97,9 @@ describe('CLI', () => {
       expect(parsed).toHaveProperty('findings');
       expect(parsed).toHaveProperty('metadata');
       expect(parsed.metadata.modelCount).toBe(2);
-      expect(parsed.findings).toHaveLength(0);
+      // Post.authorId FK not covered by PK/unique → FK_MISSING_INDEX
+      expect(parsed.findings).toHaveLength(1);
+      expect(parsed.findings[0].rule).toBe('FK_MISSING_INDEX');
     });
 
     it('outputs text with --format text', async () => {
@@ -105,7 +107,7 @@ describe('CLI', () => {
       expect(code).toBe(0);
       expect(stdoutOutput).toContain('=== Prisma Schema Audit ===');
       expect(stdoutOutput).toContain('Models:    2');
-      expect(stdoutOutput).toContain('No normalization findings.');
+      expect(stdoutOutput).toContain('FK_MISSING_INDEX');
     });
 
     it('returns 0 for a clean schema without --fail-on', async () => {
@@ -290,6 +292,58 @@ describe('CLI', () => {
         expect(fd).toHaveProperty('note');
         expect(typeof fd.note).toBe('string');
       }
+    });
+
+    it('output includes rule fields', async () => {
+      const code = await main(['--schema', BASIC_SCHEMA, '--generate-invariants']);
+      expect(code).toBe(0);
+
+      const parsed = JSON.parse(stdoutOutput.trim());
+      const userFds = parsed.User.functionalDependencies;
+      for (const fd of userFds) {
+        expect(fd).toHaveProperty('rule');
+        expect(typeof fd.rule).toBe('string');
+        expect(fd.rule).toContain('Each User is uniquely identified by');
+      }
+    });
+  });
+
+  describe('--findings-only', () => {
+    it('omits contract from JSON output', async () => {
+      const code = await main(['--schema', BASIC_SCHEMA, '--no-timestamp', '--findings-only']);
+      expect(code).toBe(0);
+
+      const parsed = JSON.parse(stdoutOutput.trim());
+      expect(parsed).not.toHaveProperty('contract');
+      expect(parsed).toHaveProperty('findings');
+      expect(parsed).toHaveProperty('metadata');
+    });
+
+    it('omits contract section from text output', async () => {
+      const code = await main(['--schema', BASIC_SCHEMA, '--format', 'text', '--no-timestamp', '--findings-only']);
+      expect(code).toBe(0);
+
+      expect(stdoutOutput).toContain('=== Prisma Schema Audit ===');
+      expect(stdoutOutput).not.toContain('--- Constraint Contract ---');
+    });
+  });
+
+  describe('--invariants with suppress', () => {
+    const SUPPRESS_INVARIANTS = resolve(INVARIANTS_DIR, 'with-suppress.json');
+
+    it('suppresses findings matching suppress entries', async () => {
+      const code = await main([
+        '--schema', NF3_SCHEMA,
+        '--invariants', SUPPRESS_INVARIANTS,
+        '--no-timestamp',
+      ]);
+      expect(code).toBe(0);
+
+      const parsed = JSON.parse(stdoutOutput.trim());
+      const nf3Findings = parsed.findings.filter((f: { rule: string }) => f.rule === 'NF3_VIOLATION');
+      // NF3_VIOLATION:Employee is suppressed
+      const employeeNf3 = nf3Findings.filter((f: { model: string }) => f.model === 'Employee');
+      expect(employeeNf3).toHaveLength(0);
     });
   });
 
