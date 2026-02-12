@@ -1,0 +1,10 @@
+{
+  "Employee": {
+    "functionalDependencies": [
+      {
+        "determinant": ["departmentId"],
+        "dependent": ["deptName", "deptLocation"]
+      }
+    ]
+  }
+}
